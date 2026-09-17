@@ -1,15 +1,16 @@
 # timingwheel
 
-一个基于分层时间轮（Hierarchical Timing Wheel）的 Go 定时任务调度库，用于对大量带过期时间的任务做高效调度，无需全表扫描。
+一个基于单层分桶时间轮（Timing Wheel）的 Go 定时任务调度库，用于对大量带到期时间的任务做高效调度。
 
 - 无第三方依赖，Go 1.22+
-- 延迟队列（最小堆）驱动，无任务时完全休眠，不空转
-- 分层降级，跨层任务最终在根层以 `tick` 精度到期
+- 排期 O(1)（直接落桶），到期批量触发
+- 由单个对齐 ticker 驱动，到期时刻被量化到 Tick 边界，误差最大一个 Tick
+- 适合秒级/毫秒级、海量任务场景；需要纳秒精度或延迟跨度极大的场景应改用分层时间轮或最小堆
 
 ## 安装
 
 ```sh
-go get github.com/ndsky1003/timingwheel
+go get github.com/ndsky1003/timingwheel/v2
 ```
 
 ## 快速开始
@@ -18,38 +19,33 @@ go get github.com/ndsky1003/timingwheel
 package main
 
 import (
-	"sync/atomic"
+	"fmt"
 	"time"
 
-	"github.com/ndsky1003/timingwheel"
+	"github.com/ndsky1003/timingwheel/v2"
 )
 
-// 实现 Task 接口，承载你自己的任务数据
-type myTask struct {
-	expireAt  int64        // 到期时间（纳秒时间戳）
-	cancelled atomic.Bool  // 是否已取消
-	id        string
-}
-
-func (t *myTask) IsCancelled() bool    { return t.cancelled.Load() }
-func (t *myTask) GetExpiration() int64 { return t.expireAt }
-
 func main() {
-	tw := timingwheel.NewDelayTimingWheel(time.Second, 64, func(tasks []timingwheel.Task) {
-		for _, t := range tasks {
-			mt := t.(*myTask)
-			// 处理到期任务
-			_ = mt.id
-		}
-	})
-	tw.Start()
+	tw := timingwheel.NewWheel(time.Second)
 	defer tw.Stop()
 
-	// 3 秒后到期
-	tw.Add(&myTask{
-		id:       "task-1",
-		expireAt: time.Now().Add(3 * time.Second).UnixNano(),
+	// 3 秒后执行一次
+	tw.AddAfter(3*time.Second, func() {
+		fmt.Println("3 秒后触发")
 	})
+
+	// 在指定时刻执行
+	tw.AddAt(time.Now().Add(5*time.Second), func() {
+		fmt.Println("5 秒时刻触发")
+	})
+
+	// 每隔 1 秒执行，直到取消
+	task := tw.AddInterval(time.Second, func() {
+		fmt.Println("周期触发")
+	})
+
+	time.Sleep(5 * time.Second)
+	task.Cancel()
 
 	select {}
 }
@@ -58,32 +54,35 @@ func main() {
 ## API
 
 ```go
-// Task 是调度的最小单元，由使用方实现
-type Task interface {
-	IsCancelled() bool    // 是否已取消
-	GetExpiration() int64 // 到期时间，纳秒时间戳
-}
+// 创建并启动一个时间轮
+//   tick 到期检查粒度，也即到期时刻的量化误差上限；tick <= 0 退化为 1 秒
+func NewWheel(tick time.Duration) *Wheel
 
-// 创建时间轮
-//   tick     根层每格时长
-//   wheelSize 每层槽位数量（一圈覆盖 tick * wheelSize）
-//   onExpired 整槽任务到期时的批量回调
-func NewDelayTimingWheel(tick time.Duration, wheelSize int64, onExpired func([]Task)) *DelayTimingWheel
+// delay 之后执行一次 fn，返回可用于取消的 Task；delay <= 0 落在最近的下一个 Tick 边界
+func (w *Wheel) AddAfter(delay time.Duration, fn func()) *Task
 
-func (tw *DelayTimingWheel) Start()            // 启动后台调度协程
-func (tw *DelayTimingWheel) Stop()             // 停止（幂等，可重复调用）
-func (tw *DelayTimingWheel) Add(tm Task) bool  // 投递任务；若已过期返回 false 且不触发回调
+// deadline 时刻（量化到 Tick 边界）之后执行一次 fn；deadline 已过期等价于 AddAfter(0, fn)
+func (w *Wheel) AddAt(deadline time.Time, fn func()) *Task
+
+// 每隔 interval 执行一次 fn，直到 Cancel 或 Stop；interval <= 0 时 panic
+func (w *Wheel) AddInterval(interval time.Duration, fn func()) *Task
+
+// 停止时间轮并丢弃所有未执行任务；幂等，调用后不应再使用该时间轮
+func (w *Wheel) Stop()
+
+// 取消任务，幂等；任务已开始执行后取消不撤销正在/已经执行的回调
+func (t *Task) Cancel()
 ```
 
 ## 工作原理
 
-时间轮由多层组成：根层每格 `tick`，上层每格等于下层的整圈 `tick * wheelSize`，从而指数级扩大可表示的时间跨度。
+时间轮把任务按「对齐到 Tick 边界的到期时刻」分桶，由一个对齐到 Tick 边界的 ticker 每 Tick 批量执行到期桶中的任务：
 
-- **根层向上对齐（ceil）**：任务投递到根层时对齐到下一个 tick 边界，到期即直接回调。
-- **上层向下对齐（floor）**：超出根层一圈的任务投递到上层，槽位时间不晚于真实到期时间。
-- **到期前从根层重新投递**：上层槽位到期时，尚未真正到期的任务重新从根层投递，自动路由降层，最终在根层以 `tick` 精度到期。
-
-所有层共享同一个最小堆（延迟队列），只在根层跑一个 `run` 协程：无任务时休眠，仅在有任务即将到期时才被唤醒。
+- **排期 O(1)**：`AddAfter` 只做一次向上取整 `align` 后直接落桶，无需遍历。
+- **对齐到边界**：到期时刻向上取整到下一个 Tick 边界，保证落在未来的桶，误差最大一个 Tick。
+- **批量 flush**：每 Tick 把「上次边界到当前边界」之间所有到期桶取出，在锁外逐个执行回调。
+- **锁外回调**：`fn` 在锁外执行，因此可在回调中调用 `AddAfter`、`AddAt`、`AddInterval` 或 `Task.Cancel`；但不得调用 `Stop`（否则会等待自身而永久阻塞）。
+- **周期任务**：执行完后按理论边界重算下一次到期（`align(due + interval)`），不重叠执行，实际周期约等于 `interval + 单次执行耗时`。
 
 ## 测试
 
