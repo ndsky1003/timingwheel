@@ -21,9 +21,9 @@ func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	}
 }
 
-func TestWheelExpire(t *testing.T) {
+func TestTimingWheelExpire(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(5 * time.Millisecond)
+	tw := NewTimingWheel(5 * time.Millisecond)
 	defer tw.Stop()
 
 	n := 100
@@ -34,9 +34,9 @@ func TestWheelExpire(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return fired.Load() == int32(n) })
 }
 
-func TestWheelBatch(t *testing.T) {
+func TestTimingWheelBatch(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(5 * time.Millisecond)
+	tw := NewTimingWheel(5 * time.Millisecond)
 	defer tw.Stop()
 
 	// 同一到期边界放置多个任务，验证批量 flush。
@@ -48,9 +48,9 @@ func TestWheelBatch(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return fired.Load() == int32(n) })
 }
 
-func TestWheelAddAt(t *testing.T) {
+func TestTimingWheelAddAt(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(5 * time.Millisecond)
+	tw := NewTimingWheel(5 * time.Millisecond)
 	defer tw.Stop()
 
 	tw.AddAt(time.Now().Add(30*time.Millisecond), func() { fired.Add(1) })
@@ -58,9 +58,9 @@ func TestWheelAddAt(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return fired.Load() == 1 })
 }
 
-func TestWheelAddAtExpired(t *testing.T) {
+func TestTimingWheelAddAtExpired(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(5 * time.Millisecond)
+	tw := NewTimingWheel(5 * time.Millisecond)
 	defer tw.Stop()
 
 	// 已过期的 deadline 等价于 AddAfter(0)，落在下一个 tick 边界触发。
@@ -69,9 +69,9 @@ func TestWheelAddAtExpired(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return fired.Load() == 1 })
 }
 
-func TestWheelCancel(t *testing.T) {
+func TestTimingWheelCancel(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(5 * time.Millisecond)
+	tw := NewTimingWheel(5 * time.Millisecond)
 	defer tw.Stop()
 
 	task := tw.AddAfter(50*time.Millisecond, func() { fired.Add(1) })
@@ -84,9 +84,9 @@ func TestWheelCancel(t *testing.T) {
 	}
 }
 
-func TestWheelAddInterval(t *testing.T) {
+func TestTimingWheelAddInterval(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(5 * time.Millisecond)
+	tw := NewTimingWheel(5 * time.Millisecond)
 	defer tw.Stop()
 
 	task := tw.AddInterval(20*time.Millisecond, func() { fired.Add(1) })
@@ -101,8 +101,8 @@ func TestWheelAddInterval(t *testing.T) {
 	}
 }
 
-func TestWheelAddIntervalPanic(t *testing.T) {
-	tw := NewWheel(time.Millisecond)
+func TestTimingWheelAddIntervalPanic(t *testing.T) {
+	tw := NewTimingWheel(time.Millisecond)
 	defer tw.Stop()
 
 	defer func() {
@@ -113,9 +113,9 @@ func TestWheelAddIntervalPanic(t *testing.T) {
 	tw.AddInterval(0, func() {})
 }
 
-func TestWheelPrecision(t *testing.T) {
+func TestTimingWheelPrecision(t *testing.T) {
 	var firedAt atomic.Int64
-	tw := NewWheel(50 * time.Millisecond)
+	tw := NewTimingWheel(50 * time.Millisecond)
 	defer tw.Stop()
 
 	start := time.Now()
@@ -130,9 +130,9 @@ func TestWheelPrecision(t *testing.T) {
 	}
 }
 
-func TestWheelZeroTick(t *testing.T) {
+func TestTimingWheelZeroTick(t *testing.T) {
 	var fired atomic.Int32
-	tw := NewWheel(0) // tick <= 0 退化为 1 秒
+	tw := NewTimingWheel(0) // tick <= 0 退化为 1 秒
 	defer tw.Stop()
 
 	tw.AddAfter(time.Millisecond, func() { fired.Add(1) })
@@ -140,8 +140,8 @@ func TestWheelZeroTick(t *testing.T) {
 	waitFor(t, 3*time.Second, func() bool { return fired.Load() == 1 })
 }
 
-func TestWheelStopIdempotent(t *testing.T) {
-	tw := NewWheel(time.Millisecond)
+func TestTimingWheelStopIdempotent(t *testing.T) {
+	tw := NewTimingWheel(time.Millisecond)
 	tw.Stop()
 	tw.Stop() // 重复调用不应 panic
 }

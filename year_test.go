@@ -9,7 +9,7 @@ import (
 // TestYearLongTask 验证 1 年后的任务能成功投递：到期时刻用 int64 纳秒时间戳
 // 表示，1 年（约 3.15e16ns）远小于 int64 上限，不应溢出，对齐后也不应 panic。
 func TestYearLongTask(t *testing.T) {
-	tw := NewWheel(time.Second)
+	tw := NewTimingWheel(time.Second)
 	defer tw.Stop()
 
 	task := tw.AddAfter(365*24*time.Hour, func() {})
@@ -24,7 +24,7 @@ func TestYearLongTask(t *testing.T) {
 func TestLongDelayPrecision(t *testing.T) {
 	tick := 10 * time.Millisecond
 	var firedAt atomic.Int64
-	tw := NewWheel(tick)
+	tw := NewTimingWheel(tick)
 	defer tw.Stop()
 
 	start := time.Now()

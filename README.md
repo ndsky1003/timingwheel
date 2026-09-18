@@ -26,7 +26,7 @@ import (
 )
 
 func main() {
-	tw := timingwheel.NewWheel(time.Second)
+	tw := timingwheel.NewTimingWheel(time.Second)
 	defer tw.Stop()
 
 	// 3 秒后执行一次
@@ -56,19 +56,19 @@ func main() {
 ```go
 // 创建并启动一个时间轮
 //   tick 到期检查粒度，也即到期时刻的量化误差上限；tick <= 0 退化为 1 秒
-func NewWheel(tick time.Duration) *Wheel
+func NewTimingWheel(tick time.Duration) *TimingWheel
 
 // delay 之后执行一次 fn，返回可用于取消的 Task；delay <= 0 落在最近的下一个 Tick 边界
-func (w *Wheel) AddAfter(delay time.Duration, fn func()) *Task
+func (w *TimingWheel) AddAfter(delay time.Duration, fn func()) *Task
 
 // deadline 时刻（量化到 Tick 边界）之后执行一次 fn；deadline 已过期等价于 AddAfter(0, fn)
-func (w *Wheel) AddAt(deadline time.Time, fn func()) *Task
+func (w *TimingWheel) AddAt(deadline time.Time, fn func()) *Task
 
 // 每隔 interval 执行一次 fn，直到 Cancel 或 Stop；interval <= 0 时 panic
-func (w *Wheel) AddInterval(interval time.Duration, fn func()) *Task
+func (w *TimingWheel) AddInterval(interval time.Duration, fn func()) *Task
 
 // 停止时间轮并丢弃所有未执行任务；幂等，调用后不应再使用该时间轮
-func (w *Wheel) Stop()
+func (w *TimingWheel) Stop()
 
 // 取消任务，幂等；任务已开始执行后取消不撤销正在/已经执行的回调
 func (t *Task) Cancel()

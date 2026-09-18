@@ -7,10 +7,10 @@ import (
 	"time"
 )
 
-// TestWheelConcurrentStress 并发投递海量任务，混合不同到期时间，验证不丢失。
-func TestWheelConcurrentStress(t *testing.T) {
+// TestTimingWheelConcurrentStress 并发投递海量任务，混合不同到期时间，验证不丢失。
+func TestTimingWheelConcurrentStress(t *testing.T) {
 	var fired atomic.Int64
-	tw := NewWheel(time.Millisecond)
+	tw := NewTimingWheel(time.Millisecond)
 	defer tw.Stop()
 
 	var wg sync.WaitGroup
@@ -28,10 +28,10 @@ func TestWheelConcurrentStress(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return fired.Load() == int64(n) })
 }
 
-// TestWheelConcurrentCancel 并发投递中穿插取消，验证 -race 下无竞态且取消生效。
-func TestWheelConcurrentCancel(t *testing.T) {
+// TestTimingWheelConcurrentCancel 并发投递中穿插取消，验证 -race 下无竞态且取消生效。
+func TestTimingWheelConcurrentCancel(t *testing.T) {
 	var fired atomic.Int64
-	tw := NewWheel(time.Millisecond)
+	tw := NewTimingWheel(time.Millisecond)
 	defer tw.Stop()
 
 	var wg sync.WaitGroup

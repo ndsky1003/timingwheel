@@ -4,7 +4,7 @@
 
 ## 实现（单文件）
 
-- `timingwheel.go` — 唯一实现：单层分桶时间轮。导出 API：`Task`、`Wheel`、`NewWheel`、`(*Wheel).AddAfter/AddAt/AddInterval/Stop`、`(*Task).Cancel`。
+- `timingwheel.go` — 唯一实现：单层分桶时间轮。导出 API：`Task`、`TimingWheel`、`NewTimingWheel`、`(*TimingWheel).AddAfter/AddAt/AddInterval/Stop`、`(*Task).Cancel`。
 
 核心语义：**任务按「对齐到 Tick 边界的到期时刻」分桶，由单个对齐 ticker 每 Tick 批量 flush 到期桶**。
 
@@ -22,7 +22,7 @@ go test -race ./...   # 必须带 -race，这是并发代码
 - `rebucket`（周期任务重排）必须用 `align(due + interval)`，不能用 `time.Now()` 重算：越过边界的微小延迟被 ceil 会多出一个 tick，导致周期膨胀。
 - `align` 是向上取整（ceil），保证任务落到未来的桶。
 - `Stop` 有 `stopOnce` 保护；重复调用不应 panic。
-- `NewWheel(tick <= 0)` 退化为 1 秒。
+- `NewTimingWheel(tick <= 0)` 退化为 1 秒。
 
 ## 约定与陷阱
 
